@@ -18,11 +18,56 @@ cookie_jar = os.path.join(cookie_path, 'tvplayer.lwp')
 if not os.path.exists(cookie_path):
     os.makedirs(cookie_path)
 
-use_inputstream = ADDON.getSetting('use_inputstream') == 'true'
+
+def get_inputstream_addon():
+    """Checks if the inputstream addon is installed & enabled.
+       Returns the type of the inputstream addon used and if it's enabled,
+       or None if not found.
+    Returns
+    -------
+    :obj:`tuple` of obj:`str` and bool, or None
+        Inputstream addon and if it's enabled, or None
+    """
+    type = 'inputstream.adaptive'
+    payload = {
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'Addons.GetAddonDetails',
+        'params': {
+            'addonid': type,
+            'properties': ['enabled']
+        }
+    }
+    response = xbmc.executeJSONRPC(json.dumps(payload))
+    data = json.loads(response)
+    if 'error' not in data.keys():
+        return type, data['result']['addon']['enabled']
+    return None, None
+
+
+addon_type, addon_enabled = get_inputstream_addon()
+inputstream_addon_available = addon_type is not None and addon_enabled
+
+try:
+    inputstream_adaptive_addon = xbmcaddon.Addon ('inputstream.adaptive')
+    inputstream_adaptive_version = inputstream_adaptive_addon.getAddonInfo('version')
+    inputstream_adaptive_compatible = inputstream_adaptive_version >= '2.2.7'
+    xbmc.log("INPUTSTREAM.ADAPTIVE VERSION: %s" % inputstream_adaptive_version)
+    if not addon_enabled:
+        xbmc.log("INPUTSTREAM.ADAPTIVE NOT ENABLED!")
+except Exception as ex:
+    inputstream_addon_available = False
+    inputstream_adaptive_version = None
+    inputstream_adaptive_compatible = False
+    xbmc.log("INPUTSTREAM.ADAPTIVE NOT AVAILABLE!")
+
+use_inputstream = ADDON.getSetting('use_inputstream') == 'true' and inputstream_addon_available
 allow_drm = ADDON.getSetting('allow_drm') == 'true' and use_inputstream
 premium_enabled = ADDON.getSetting('premium') == 'true' and allow_drm
 authentication_enabled = ADDON.getSetting('email') is not None and ADDON.getSetting('email') != '' and ADDON.getSetting('password') is not None and ADDON.getSetting('password') != ''
+skinTheme = xbmc.getSkinDir().lower()
 isJarvis = xbmc.getInfoLabel("System.BuildVersion").startswith("16.")
+isFTV = skinTheme.startswith('skin.ftv')
 
 addonPath = xbmc.translatePath(xbmcaddon.Addon().getAddonInfo('path'))
 artPath = os.path.join(addonPath, 'resources', 'media')
@@ -40,22 +85,6 @@ STARTUP_URL = 'http://assets.storage.uk.tvplayer.com/' + platform + '/v4/startup
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5'
 API_USER_AGENT = 'TVPlayer_4.1.3 (54059) - tv'
 MOBILE_USER_AGENT = 'iPhone/iOS 8.4 (iPhone; U; CPU iPhone OS 8_4 like Mac OS X;)'
-
-
-class Zone(tzinfo):
-    def __init__(self, offset, isdst, name):
-        self.offset = offset
-        self.isdst = isdst
-        self.name = name
-
-    def utcoffset(self, dt):
-        return timedelta(hours=self.offset) + self.dst(dt)
-
-    def dst(self, dt):
-        return timedelta(hours=1) if self.isdst else timedelta(0)
-
-    def tzname(self, dt):
-        return self.name
 
 
 def login():
@@ -83,7 +112,11 @@ def login():
 
 
 def login_api():
-    loginUrl = 'http://api.tvplayer.com/api/v2/auth/?platform=' + platform
+    ADDON.setSetting('email_token', '')
+    ADDON.setSetting('access_token', '')
+    ADDON.setSetting('access_token_expires', '')
+
+    loginUrl = 'https://api.tvplayer.com/api/v2/auth/?platform=' + platform
 
     email = ADDON.getSetting('email')
     password = ADDON.getSetting('password')
@@ -97,6 +130,7 @@ def login_api():
     access_token = login_response['access_token']
     access_token_expires = login_response['expires']
 
+    ADDON.setSetting('email_token', email)
     ADDON.setSetting('access_token', access_token)
     ADDON.setSetting('access_token_expires', access_token_expires)
 
@@ -104,28 +138,41 @@ def login_api():
 
 
 def get_token(retry=1):
+    if not is_token_valid():
+        login_api()
+        return get_token(retry - 1) if retry > 0 else None
+
+    return ADDON.getSetting('access_token')
+
+
+def is_token_valid():
+    email_token = ADDON.getSetting('email_token')
+    email = ADDON.getSetting('email')
+
+    if email_token <> email:
+        return False
+
     access_token = ADDON.getSetting('access_token')
     access_token_expires = ADDON.getSetting('access_token_expires')
 
     expires = util.strptime_workaround(access_token_expires[:-5]) if access_token_expires else None  # 2018-04-13T02:53:14+0000
 
     if not access_token or not expires or expires < datetime.utcnow():
-        login_api()
-        return get_token(retry - 1) if retry > 0 else None
+        return False
 
-    return access_token
+    return True
 
 
 def get_packs():
 
     packs_list = ADDON.getSetting('packs')
 
-    if packs_list:
+    if packs_list and is_token_valid():
         return json.loads(packs_list)
 
     token = get_token()
 
-    url = 'http://api.tvplayer.com/api/v2/account/get?platform=%s&token=%s' % (platform, token)
+    url = 'https://api.tvplayer.com/api/v2/account/get?platform=%s&token=%s' % (platform, token)
 
     headers = {'User-Agent': API_USER_AGENT,
                'Accept-Encoding': 'gzip'}
@@ -143,26 +190,43 @@ def get_packs():
     return packs_list
 
 
-def findprogramme(programmes, now, tzinfo):
+def get_startup_settings():
+    startup_settings = ADDON.getSetting('startup_settings')
+
+    if startup_settings:
+        return json.loads(startup_settings)
+
+    headers = {'User-Agent': API_USER_AGENT,
+               'Accept-Encoding': 'gzip'}
+
+    startup_settings = json.loads(net.http_GET(STARTUP_URL, headers).content)
+
+    ADDON.setSetting('startup_settings', json.dumps(startup_settings))
+
+    return startup_settings
+
+
+def findprogramme(programmes, now):
     for programme in programmes:
         # try:
             start = util.strptime_workaround(programme['start'][:-5])
-            start = start.replace(tzinfo=tzinfo) + util.get_utc_delta()
-            end = util.strptime_workaround(programme['end'][:-5]) + util.get_utc_delta()
-            end = end.replace(tzinfo=tzinfo) + util.get_utc_delta()
+            end = util.strptime_workaround(programme['end'][:-5])
 
             if end >= now >= start:
-                xbmc.log('PROGRAMME: %s' % programme)
+                xbmc.log('SELECTED PROGRAMME: %s (Start: %s | End: %s | Now: %s)' % (programme, start, end, now))
                 return programme, start, end
-        # except:
+
+            # xbmc.log('IGNORING PROGRAMME: %s (Start: %s | End: %s | Now: %s)' % (programme, start, end, now))
+
+    # except:
         #     pass
 
+    xbmc.log('NO PROGRAMME SELECTED: %s (Now: %s)' % (programmes, now))
     return None, None, None
 
 
-def CATEGORIES():
-    tzinfo = Zone(0, False, 'GMT')
-    now = datetime.now(tzinfo)
+def categories():
+    now = datetime.utcnow()
     EST = now.strftime('%Y-%m-%dT%H:%M:%S')
 
     #xbmc.log("URL: %s" % URL)
@@ -188,7 +252,7 @@ def CATEGORIES():
         if len([pack for pack in packs if int(pack) in my_packs]) == 0:
             continue
 
-        programme, start, end = findprogramme(field['programmes'], now, tzinfo)
+        programme, start, end = findprogramme(field['programmes'], now)
 
         sort_title = field['order']
         id = str(field['id'])
@@ -256,12 +320,11 @@ def CATEGORIES():
     xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_VIDEO_SORT_TITLE)
     xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_LABEL)
 
-    setView('LiveTV' if isJarvis else 'tvshows', 'default')
+    setView('LiveTV' if isJarvis else 'artists', 'default')
 
 
 def GENRE(genre, url):
-    tzinfo = Zone(0, False, 'GMT')
-    now = datetime.now(tzinfo)
+    now = datetime.utcnow()
     EST = now.strftime('%Y-%m-%dT%H:%M:%S')
     response = OPEN_URL(EPG_URL % str(EST))
 
@@ -282,7 +345,7 @@ def GENRE(genre, url):
         if len([pack for pack in packs if int(pack) in my_packs]) == 0:
             continue
 
-        programme, start, end = findprogramme(field['programmes'], now, tzinfo)
+        programme, start, end = findprogramme(field['programmes'], now)
 
         sort_title = field['order']
         id = str(field['id'])
@@ -347,7 +410,7 @@ def GENRE(genre, url):
     if ADDON.getSetting('sort') == 'true':
         xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_VIDEO_TITLE)
 
-    setView('LiveTV' if isJarvis else 'tvshows', 'default')
+    setView('LiveTV' if isJarvis else 'artists', 'default')
 
 
 def OPEN_URL(url):
@@ -395,19 +458,19 @@ def tvplayer(url, name):
 
     jsonString = net.http_GET('https://tvplayer.com/watch/context?resource=%s&gen=%s' % (resource, nouce), headers).content
 
-    resourceJson = json.loads(jsonString)
+    context = json.loads(jsonString)
 
-    VALIDATE = resourceJson['validate']
+    validate = context['validate']
 
-    TOKEN = resourceJson['token'] if 'token' in resourceJson else 'null'
+    token = context['token'] if 'token' in context else 'null'
 
     data = {'service': '1',
             'platform': 'chrome',
             'id': url,
-            'token': TOKEN,
-            'validate': VALIDATE}
+            'token': token,
+            'validate': validate}
 
-    POSTURL = 'http://api.tvplayer.com/api/v2/stream/live'
+    post_url = 'http://api.tvplayer.com/api/v2/stream/live'
     headers = {'Host': 'api.tvplayer.com',
                'Connection': 'keep-alive',
                'Origin': 'http://api.tvplayer.com',
@@ -417,51 +480,123 @@ def tvplayer(url, name):
                'Accept-Encoding': 'gzip, deflate',
                'Accept-Language': 'en-US,en;q=0.8'}
 
-    LINK = net.http_POST(POSTURL, data, headers=headers).content
+    link = net.http_POST(post_url, data, headers=headers).content
 
-    xbmc.log('LINK: %s' % LINK)
+    xbmc.log('LINK: %s' % link)
 
     net.save_cookies(cookie_jar)
 
-    link_json = json.loads(LINK)
+    link_json = json.loads(link)
 
-    return link_json['tvplayer']['response']['stream'], link_json['tvplayer']['response']['drmToken'] if 'drmToken' in link_json['tvplayer']['response'] else None
+    return link_json['tvplayer']['response']['stream'], link_json['tvplayer']['response']['drmToken'] if 'drmToken' in link_json['tvplayer']['response'] else None, context
 
     # GET WORKS TOO
     # POSTURL='http://api.tvplayer.com/api/v2/stream/live?service=1&platform=website&id=%stoken=null&validate=%s'% (url,VALIDATE)
     # LINK=net.http_GET(POSTURL,headers=headers).content
     # return re.compile('stream": "(.+?)"').findall(LINK)[0]
 
+def play_stream_iplayer(channelname):
+    # providers = [('ak', 'Akamai'), ('llnw', 'Limelight')]
 
-def PLAY_STREAM(name, url, iconimage):
-    STREAM, drm_token = tvplayer(url, name)
+    provider_url = 'ak'
 
-    # HOST = STREAM.split('//')[1]
-    # HOST = HOST.split('/')[0]
+    # First we query the available streams from this website
+    if channelname in ['bbc_parliament', 'bbc_alba', 's4cpbs', 'bbc_one_london',
+                       'bbc_two_wales_digital', 'bbc_two_northern_ireland_digital',
+                       'bbc_two_scotland', 'bbc_one_cambridge', 'bbc_one_channel_islands',
+                       'bbc_one_east', 'bbc_one_east_midlands', 'bbc_one_east_yorkshire',
+                       'bbc_one_north_east', 'bbc_one_north_west', 'bbc_one_oxford',
+                       'bbc_one_south', 'bbc_one_south_east', 'bbc_one_south_west',
+                       'bbc_one_west', 'bbc_one_west_midlands', 'bbc_one_yorks']:
+        device = 'hls_tablet'
+    else:
+        device = 'abr_hdtv'
 
-    # headers = {'Host': HOST,
-    #            'Connection': 'keep-alive',
-    #            'Origin': 'http://' + HOST,
-    #            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36'}
+    cast = "simulcast"
 
-    TOKEN = open(cookie_jar).read()
-    TOKEN = 'AWSELB=' + re.compile('AWSELB=(.+?);').findall(TOKEN)[0]
+    url = 'https://a.files.bbci.co.uk/media/live/manifesto/audio_video/%s/hls/uk/%s/%s/%s.m3u8' \
+          % (cast, device, provider_url, channelname)
 
     liz = xbmcgui.ListItem(name, iconImage='DefaultVideo.png', thumbnailImage=iconimage)
     liz.setInfo(type='Video', infoLabels={'Title': name})
     liz.setProperty("IsPlayable", "true")
+    liz.setPath(url)
 
     if use_inputstream:
-        parsed_url = urlparse(STREAM)
+        liz.setProperty('inputstream.adaptive.manifest_type', 'hls')
+        liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
+
+    xbmcplugin.setResolvedUrl(int(sys.argv[1]), True, liz)
+
+
+def play_stream(name, url, iconimage):
+
+    if ADDON.getSetting('use_iplayer') == 'true':
+        settings = get_startup_settings()['iplayer_channelsid_values']
+        for channel in settings:
+            if int(url) == int(channel['id']):
+                channelname = channel['value']
+                return play_stream_iplayer(channelname)
+
+    stream, drm_token, context = tvplayer(url, name)
+
+    token = open(cookie_jar).read()
+    token = 'AWSELB=' + re.compile('AWSELB=(.+?);').findall(token)[0]
+
+    epg = context['epg']
+    channel = context['channel']
+
+    label = channel['name'] # + ' - ' + epg['title']
+    title = label
+    clearlogo = channel['logo']['compositeWide']
+    studio = channel['name']
+    tvshowtitle = epg['seriesTitle']
+    synopsis = epg['synopsis']
+    thumb = epg['thumbnail']
+    genre = channel['genre']
+
+    liz = xbmcgui.ListItem(label)
+
+    info_labels = {
+                    # "Plot": synopsis,
+                    "Genre": genre,
+                    "title": title,
+                    "studio": studio,
+                    # "tvshowtitle": tvshowtitle,
+                    # "PlotOutline": synopsis
+                }
+
+    liz.setInfo(type='Video', infoLabels=info_labels)
+
+    liz.setProperty("IsPlayable", "true")
+
+    # art = {
+    #         'icon': clearlogo,
+    #         'clearlogo': clearlogo,
+    #         'fanart': thumb,
+    #         'thumb': thumb
+    #     }
+
+    art = {
+        'icon': clearlogo,
+        'clearlogo': clearlogo,
+        'fanart': clearlogo,
+        'thumb': clearlogo
+    }
+
+    liz.setArt(art)
+
+    if use_inputstream:
+        parsed_url = urlparse(stream)
         xbmc.log("PARSED STREAM URL: %s" % parsed_url.path)
         if parsed_url.path.endswith(".m3u8"):
             liz.setProperty('inputstream.adaptive.manifest_type', 'hls')
             liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
-            liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + TOKEN)
+            liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
         elif parsed_url.path.endswith(".mpd"):
             liz.setProperty('inputstream.adaptive.manifest_type', 'mpd')
             liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
-            liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + TOKEN)
+            liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
 
             xbmc.log("-INPUTSTREAM.ADAPTIVE MPD-")
             xbmc.log("DRM TOKEN: %s" % drm_token)
@@ -469,9 +604,9 @@ def PLAY_STREAM(name, url, iconimage):
             if drm_token:
                 use_drm_proxy = ADDON.getSetting('use_drm_proxy') == 'true'
 
-                if use_drm_proxy:
+                if use_drm_proxy or not inputstream_adaptive_compatible:
                     wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
-                    wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, STREAM, base64.b64encode(drm_token), TOKEN)
+                    wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, stream, base64.b64encode(drm_token), token)
                     license_key = wv_proxy_url + '||R{SSM}|'
                 else:
                     wv_proxy_url = 'https://widevine-proxy.drm.technology/proxy'
@@ -489,9 +624,9 @@ def PLAY_STREAM(name, url, iconimage):
                 liz.setProperty('inputstream.adaptive.license_type', 'com.widevine.alpha')
                 liz.setProperty('inputstream.adaptive.license_key', license_key)
     else:
-        STREAM = STREAM + '|Cookies=' + TOKEN
+        stream = stream + '|Cookies=' + token
 
-    item_path = STREAM
+    item_path = stream
 
     liz.setPath(item_path)
 
@@ -522,9 +657,13 @@ def addDir(name, url, mode, iconimage, description, fanart, genre='', sorttitle=
 
     liz = xbmcgui.ListItem(name, iconImage="DefaultFolder.png", thumbnailImage=iconimage)
 
-    info_labels = {"Plot": description or ' ', "Genre": genre}
+    info_labels = {"Plot": description or ' ',
+                   "Genre": genre,
+                   'playcount': 0,
+                   'overlay': 6
+                   }
 
-    if title and isJarvis:
+    if title and isFTV:
         info_labels.update({"title": title})
 
     if sorttitle:
@@ -571,6 +710,8 @@ def setView(content, viewType):
     if ADDON.getSetting('auto-view') == 'true':  # <<<----see here if auto-view is enabled(true)
         xbmc.executebuiltin("Container.SetViewMode(%s)" % ADDON.getSetting(viewType))  # <<<-----then get the view type
 
+    # xbmcplugin.setPluginCategory(int(sys.argv[1]), 'TVPLAYER')
+
 
 params = get_params()
 url = None
@@ -614,7 +755,7 @@ except:
 # these are the modes which tells the plugin where to go
 if mode is None or url is None or len(url) < 1:
 
-    CATEGORIES()
+    categories()
 
 elif mode == 2:
 
@@ -622,7 +763,7 @@ elif mode == 2:
 
 elif mode == 200:
 
-    PLAY_STREAM(name, url, iconimage)
+    play_stream(name, url, iconimage)
 
 xbmcplugin.endOfDirectory(int(sys.argv[1]), cacheToDisc=False)
 
