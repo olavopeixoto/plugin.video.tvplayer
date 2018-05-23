@@ -10,10 +10,8 @@ import xbmc
 from xbmc import Monitor
 from xbmcaddon import Addon
 from resources.lib.WidevineHTTPRequestHandler import WidevineHTTPRequestHandler
+import util
 
-use_inputstream = Addon().getSetting('use_inputstream') == 'true'
-allow_drm = Addon().getSetting('allow_drm') == 'true' and use_inputstream
-use_drm_proxy = Addon().getSetting('use_drm_proxy') == 'true' and allow_drm
 
 # helper function to select an unused port on the host machine
 def select_unused_port():
@@ -34,7 +32,7 @@ def log(msg):
 
 if __name__ == '__main__':
 
-    if use_drm_proxy:
+    if util.use_drm_proxy():
 
         # pick & store a port for the proxy service
         wv_proxy_port = select_unused_port()

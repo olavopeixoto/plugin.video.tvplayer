@@ -10,7 +10,7 @@ import base64
 
 net = net.Net()
 
-ADDON = xbmcaddon.Addon(id='plugin.video.tvplayer')
+ADDON = xbmcaddon.Addon()
 
 datapath = xbmc.translatePath(ADDON.getAddonInfo('profile'))
 cookie_path = os.path.join(datapath, 'cookies')
@@ -18,51 +18,9 @@ cookie_jar = os.path.join(cookie_path, 'tvplayer.lwp')
 if not os.path.exists(cookie_path):
     os.makedirs(cookie_path)
 
+use_inputstream = util.use_inputstream()
+allow_drm = util.allow_drm()
 
-def get_inputstream_addon():
-    """Checks if the inputstream addon is installed & enabled.
-       Returns the type of the inputstream addon used and if it's enabled,
-       or None if not found.
-    Returns
-    -------
-    :obj:`tuple` of obj:`str` and bool, or None
-        Inputstream addon and if it's enabled, or None
-    """
-    type = 'inputstream.adaptive'
-    payload = {
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'Addons.GetAddonDetails',
-        'params': {
-            'addonid': type,
-            'properties': ['enabled']
-        }
-    }
-    response = xbmc.executeJSONRPC(json.dumps(payload))
-    data = json.loads(response)
-    if 'error' not in data.keys():
-        return type, data['result']['addon']['enabled']
-    return None, None
-
-
-addon_type, addon_enabled = get_inputstream_addon()
-inputstream_addon_available = addon_type is not None and addon_enabled
-
-try:
-    inputstream_adaptive_addon = xbmcaddon.Addon ('inputstream.adaptive')
-    inputstream_adaptive_version = inputstream_adaptive_addon.getAddonInfo('version')
-    inputstream_adaptive_compatible = inputstream_adaptive_version >= '2.2.7'
-    xbmc.log("INPUTSTREAM.ADAPTIVE VERSION: %s" % inputstream_adaptive_version)
-    if not addon_enabled:
-        xbmc.log("INPUTSTREAM.ADAPTIVE NOT ENABLED!")
-except Exception as ex:
-    inputstream_addon_available = False
-    inputstream_adaptive_version = None
-    inputstream_adaptive_compatible = False
-    xbmc.log("INPUTSTREAM.ADAPTIVE NOT AVAILABLE!")
-
-use_inputstream = ADDON.getSetting('use_inputstream') == 'true' and inputstream_addon_available
-allow_drm = ADDON.getSetting('allow_drm') == 'true' and use_inputstream
 premium_enabled = ADDON.getSetting('premium') == 'true' and allow_drm
 authentication_enabled = ADDON.getSetting('email') is not None and ADDON.getSetting('email') != '' and ADDON.getSetting('password') is not None and ADDON.getSetting('password') != ''
 skinTheme = xbmc.getSkinDir().lower()
@@ -602,9 +560,8 @@ def play_stream(name, url, iconimage):
             xbmc.log("DRM TOKEN: %s" % drm_token)
 
             if drm_token:
-                use_drm_proxy = ADDON.getSetting('use_drm_proxy') == 'true'
 
-                if use_drm_proxy or not inputstream_adaptive_compatible:
+                if util.use_drm_proxy():
                     wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
                     wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, stream, base64.b64encode(drm_token), token)
                     license_key = wv_proxy_url + '||R{SSM}|'
