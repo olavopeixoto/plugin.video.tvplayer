@@ -248,7 +248,8 @@ def categories():
             desc = ''
 
         color = '[COLOR royalblue]'
-
+        
+        add = ''
         if field['type'] == 'free' and field['authRequired'] is False:
             add = ''
         elif field['type'] == 'free' and field['authRequired'] is True:
