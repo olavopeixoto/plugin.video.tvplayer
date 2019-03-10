@@ -85,4 +85,4 @@ def use_inputstream():
     return Addon().getSetting('use_inputstream') == 'true' and is_inputstream_addon_available()
 
 def allow_drm():
-    return Addon().getSetting('allow_drm') == 'true' and use_inputstream()
+    return Addon().getSetting('allow_drm') == 'true' and is_inputstream_addon_available()

@@ -1,2 +1,6 @@
+v1.0.1
+Allow to use inputstream.adaptive only for DRM content
+Fix Genre grouping
+Fix sorting option
 v1.0.0
 Initial Release

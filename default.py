@@ -18,6 +18,8 @@ cookie_jar = os.path.join(cookie_path, 'tvplayer.lwp')
 if not os.path.exists(cookie_path):
     os.makedirs(cookie_path)
 
+is_authenticated = os.path.exists(cookie_jar)
+
 use_inputstream = util.use_inputstream()
 allow_drm = util.allow_drm()
 
@@ -40,33 +42,34 @@ EPG_URL = 'http://api.tvplayer.com/api/v2/epg/?platform=' + platform + '&from=%s
 
 STARTUP_URL = 'http://assets.storage.uk.tvplayer.com/' + platform + '/v4/startups/tv/' + version + '/startup.json'
 
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5'
+USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.80 Safari/537.36'
 API_USER_AGENT = 'TVPlayer_4.1.3 (54059) - tv'
 MOBILE_USER_AGENT = 'iPhone/iOS 8.4 (iPhone; U; CPU iPhone OS 8_4 like Mac OS X;)'
 
 
 def login():
-    loginurl = 'https://tvplayer.com/account/login/'
-    email = ADDON.getSetting('email')
-    password = ADDON.getSetting('password')
+    if not is_authenticated:
+        loginurl = 'https://tvplayer.com/account/login/'
+        email = ADDON.getSetting('email')
+        password = ADDON.getSetting('password')
 
-    headers = {'Host': 'tvplayer.com',
-               'User-Agent': USER_AGENT,
-               'Content-Type': 'application/x-www-form-urlencoded',
-               'Accept': 'text/html',
-               'Referer': 'https://tvplayer.com/watch',
-               'Accept-Encoding': 'gzip',
-               'Accept-Language': 'en-US'}
+        headers = {'Host': 'tvplayer.com',
+                   'User-Agent': USER_AGENT,
+                   'Content-Type': 'application/x-www-form-urlencoded',
+                   'Accept': 'text/html',
+                   'Referer': 'https://tvplayer.com/watch',
+                   'Accept-Encoding': 'gzip',
+                   'Accept-Language': 'en-US'}
 
-    link = net.http_GET(loginurl, headers).content
-    net.save_cookies(cookie_jar)
-    token = re.compile('name="token" value="(.+?)"').findall(link)[0]
-    data = {'email': email, 'password': str(password), 'token': token}
+        link = net.http_GET(loginurl, headers).content
+        net.save_cookies(cookie_jar)
+        token = re.compile('name="token" value="(.+?)"').findall(link)[0]
+        data = {'email': email, 'password': str(password), 'token': token}
 
-    net.set_cookies(cookie_jar)
+        net.set_cookies(cookie_jar)
 
-    net.http_POST(loginurl, data, headers)
-    net.save_cookies(cookie_jar)
+        net.http_POST(loginurl, data, headers)
+        net.save_cookies(cookie_jar)
 
 
 def login_api():
@@ -107,7 +110,7 @@ def is_token_valid():
     email_token = ADDON.getSetting('email_token')
     email = ADDON.getSetting('email')
 
-    if email_token <> email:
+    if email_token != email:
         return False
 
     access_token = ADDON.getSetting('access_token')
@@ -115,10 +118,7 @@ def is_token_valid():
 
     expires = util.strptime_workaround(access_token_expires[:-5]) if access_token_expires else None  # 2018-04-13T02:53:14+0000
 
-    if not access_token or not expires or expires < datetime.utcnow():
-        return False
-
-    return True
+    return access_token and expires and expires >= datetime.utcnow()
 
 
 def get_packs():
@@ -212,7 +212,7 @@ def categories():
 
         programme, start, end = findprogramme(field['programmes'], now)
 
-        sort_title = field['order']
+        sort_title = field['name'] if ADDON.getSetting('sort') == 'true' else field['order']
         id = str(field['id'])
         name = field['name']
         channel_name = name
@@ -306,7 +306,7 @@ def GENRE(genre, url):
 
         programme, start, end = findprogramme(field['programmes'], now)
 
-        sort_title = field['order']
+        sort_title = field['name'] if ADDON.getSetting('sort') == 'true' else field['order']
         id = str(field['id'])
         name = field['name']
         channel_name = name
@@ -344,6 +344,7 @@ def GENRE(genre, url):
 
         color = '[COLOR royalblue]'
 
+        add = ''
         if field['type'] == 'free' and field['authRequired'] is False:
             add = ''
         elif field['type'] == 'free' and field['authRequired'] is True:
@@ -352,7 +353,7 @@ def GENRE(genre, url):
         else:
             color = '[COLOR magenta]'
 
-        name = color + name.encode("utf-8") + '[/COLOR] - [COLOR white]' + tvshowtitle.encode("utf-8") + episodeInfo + ((' / ' + subtitle) if subtitle else '') + '[/COLOR]' + add
+        name = color + name.encode("utf-8") + '[/COLOR] - [COLOR white]' + tvshowtitle.encode("utf-8") + episodeInfo.encode("utf-8") + ((' / ' + subtitle.encode("utf-8")) if subtitle else '') + '[/COLOR]' + add
 
         status = field['status']
         fanart = programme['thumbnail'] if programme is not None else None
@@ -366,8 +367,8 @@ def GENRE(genre, url):
                     elif field['type'] == 'free' and field['authRequired'] is True and authentication_enabled is True:
                         addDir(name, id, 200, icon, desc, fanart, category, sorttitle=sort_title, clearlogo=clearlogo, tvshowtitle=tvshowtitle, title=title, studio=studio, startdate=start, duration=duration, plotoutline=plotoutline, channel_name=channel_name)
 
-    if ADDON.getSetting('sort') == 'true':
-        xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_VIDEO_TITLE)
+    xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_VIDEO_SORT_TITLE)
+    xbmcplugin.addSortMethod(int(sys.argv[1]), xbmcplugin.SORT_METHOD_LABEL)
 
     setView('LiveTV' if isJarvis else 'artists', 'default')
 
@@ -499,8 +500,8 @@ def play_stream(name, url, iconimage):
 
     stream, drm_token, context = tvplayer(url, name)
 
-    token = open(cookie_jar).read()
-    token = 'AWSELB=' + re.compile('AWSELB=(.+?);').findall(token)[0]
+    # token = open(cookie_jar).read()
+    # token = 'AWSELB=' + re.compile('AWSELB=(.+?);').findall(token)[0]
 
     epg = context['epg']
     channel = context['channel']
@@ -545,44 +546,41 @@ def play_stream(name, url, iconimage):
 
     liz.setArt(art)
 
-    if use_inputstream:
+    if use_inputstream or (allow_drm and drm_token):
         parsed_url = urlparse(stream)
         xbmc.log("PARSED STREAM URL: %s" % parsed_url.path)
         if parsed_url.path.endswith(".m3u8"):
             liz.setProperty('inputstream.adaptive.manifest_type', 'hls')
             liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
-            liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
+            # liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
         elif parsed_url.path.endswith(".mpd"):
             liz.setProperty('inputstream.adaptive.manifest_type', 'mpd')
             liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
-            liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
+            # liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
 
             xbmc.log("-INPUTSTREAM.ADAPTIVE MPD-")
             xbmc.log("DRM TOKEN: %s" % drm_token)
 
-            if drm_token:
+        if drm_token:
 
-                if util.use_drm_proxy():
-                    wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
-                    wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, stream, base64.b64encode(drm_token), token)
-                    license_key = wv_proxy_url + '||R{SSM}|'
-                else:
-                    wv_proxy_url = 'https://widevine-proxy.drm.technology/proxy'
-                    post_data = urllib.quote_plus('{"token":"%s","drm_info":[D{SSM}],"kid":"{KID}"}' % drm_token)
-                    license_key = wv_proxy_url + '|Content-Type=application%2Fjson|' + post_data + '|'
+            if util.use_drm_proxy():
+                wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
+                wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, stream,
+                                                                      base64.b64encode(drm_token),
+                                                                      drm_token)
+                license_key = wv_proxy_url + '||R{SSM}|'
+            else:
+                wv_proxy_url = 'https://widevine-proxy.drm.technology/proxy'
+                post_data = urllib.quote_plus('{"token":"%s","drm_info":[D{SSM}],"kid":"{KID}"}' % drm_token)
+                license_key = wv_proxy_url + '|Content-Type=application%2Fjson|' + post_data + '|'
 
+            xbmc.log("inputstream.adaptive.license_key: %s" % license_key)
 
-                # wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
-                # wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, STREAM,
-                #                                                       base64.b64encode(drm_token), TOKEN)
-                # license_key = wv_proxy_url + '||R{SSM}|'
+            liz.setProperty('inputstream.adaptive.license_type', 'com.widevine.alpha')
+            liz.setProperty('inputstream.adaptive.license_key', license_key)
 
-                xbmc.log("inputstream.adaptive.license_key: %s" % license_key)
-
-                liz.setProperty('inputstream.adaptive.license_type', 'com.widevine.alpha')
-                liz.setProperty('inputstream.adaptive.license_key', license_key)
-    else:
-        stream = stream + '|Cookies=' + token
+    # else:
+    #     stream = stream + '|Cookies=' + token
 
     item_path = stream
 
