@@ -49,4 +49,5 @@ class Widevine(object):
 
         # wv_license = helper.c.make_request(self.license_url, 'post', payload=json.dumps(post_data))
         wv_license = net.http_POST(self.license_url, json.dumps(post_data), {'Content-Type': 'application/json'}).content
+
         return wv_license

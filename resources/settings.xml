@@ -1,6 +1,6 @@
 <settings>
 	<category label="Settings">
-		<setting id="premium" type="bool" label="Enable Premium" enable="eq(5,true)+eq(4,true)" default="false" visible="System.HasAddon(inputstream.adaptive)"/>
+		<setting id="premium" type="bool" label="Enable Premium" default="false" visible="System.HasAddon(inputstream.adaptive)"/>
 		<setting id="email" type="text" label="Email" default="" />
 		<setting id="password" type="text" option="hidden" label="Password" default="" enable="!eq(-1,)"/>
 		<setting label="" type="lsep"/>
@@ -10,7 +10,6 @@
         <setting label="" type="lsep"/>
 		<setting id="genre" type="bool" label="Use Genre Listing" default="false"/>
 		<setting id="sort" type="bool" label="Sort Alphabetically" default="false"/>
-		<setting id="filter_channels" type="bool" label="Filter Channels" default="true" enable="eq(-2,false)" visible="eq(-2,false)"/>
         <setting label="" type="lsep"/>
 		<setting id="use_iplayer" type="bool" label="Use iPlayer For BBC Channels" default="true"/>
 	</category>
