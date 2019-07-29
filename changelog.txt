@@ -1,3 +1,5 @@
+v1.2.0
+Support for WPT channel
 v1.1.0
 Changed to tv app API
 v1.0.1

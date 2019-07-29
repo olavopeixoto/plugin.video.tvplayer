@@ -395,7 +395,7 @@ def get_stream_url(id):
 
     if int(id) == 607:
         ifa = ADDON.getSetting('ifa')
-        
+
         if not ifa:
             ifa = str(uuid.uuid4()).upper()
             ADDON.setSetting('ifa', ifa)
