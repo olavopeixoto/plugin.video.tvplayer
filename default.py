@@ -8,6 +8,9 @@ from urlparse import urlparse
 import net
 import base64
 from hashlib import md5
+import uuid
+import sys
+import random
 
 net = net.Net()
 
@@ -127,7 +130,7 @@ def get_startup_settings():
     return startup_settings
 
 
-def findprogramme(programmes, now):
+def find_programme(programmes, now):
     for programme in programmes:
         # try:
             start = util.strptime_workaround(programme['start'][:-5])
@@ -173,7 +176,7 @@ def categories():
         if len([pack for pack in packs if int(pack) in my_packs]) == 0:
             continue
 
-        programme, start, end = findprogramme(field['programmes'], now)
+        programme, start, end = find_programme(field['programmes'], now)
 
         sort_title = field['name'] if ADDON.getSetting('sort') == 'true' else field['order']
         id = str(field['id'])
@@ -246,8 +249,8 @@ def categories():
 
 def GENRE(genre, url):
     now = datetime.utcnow()
-    EST = now.strftime('%Y-%m-%dT%H:%M:%S')
-    response = OPEN_URL(EPG_URL % str(EST))
+    est = now.strftime('%Y-%m-%dT%H:%M:%S')
+    response = OPEN_URL(EPG_URL % str(est))
 
     link = json.loads(response)
 
@@ -266,7 +269,7 @@ def GENRE(genre, url):
         if len([pack for pack in packs if int(pack) in my_packs]) == 0:
             continue
 
-        programme, start, end = findprogramme(field['programmes'], now)
+        programme, start, end = find_programme(field['programmes'], now)
 
         sort_title = field['name'] if ADDON.getSetting('sort') == 'true' else field['order']
         id = str(field['id'])
@@ -390,6 +393,18 @@ def get_stream_url(id):
     stream_url = response['tvplayer']['response']['stream']
     drm_token = response['tvplayer']['response']['drmToken']
 
+    if int(id) == 607:
+        ifa = ADDON.getSetting('ifa')
+        
+        if not ifa:
+            ifa = str(uuid.uuid4()).upper()
+            ADDON.setSetting('ifa', ifa)
+
+        ip = get_external_ip()
+        sid = str(random.randint(0, sys.maxint))
+        auth_query = '&g=1000006&u=19287a324825cc5aacb7e46183c72324&z=268729&k=channel_id=221794;app_name=tvplayer;distributor=tvplayer;app_bundle=com.tvplayer;ifa=%s;ip=%s;dnt=0;channel_name=%s;content_type=live;sub_type=paid;gdpr=1;UA=device;consent=2&ptcueformat=turner&pttrackingmode=sstm&pttrackingversion=v2&__sid__=%s' % (ifa, ip, 'World%20Poker%20Tour', sid)
+        stream_url = stream_url + auth_query
+
     return stream_url, drm_token
 
 
@@ -406,7 +421,7 @@ def play_stream_iplayer(channelname):
                        'bbc_one_north_east', 'bbc_one_north_west', 'bbc_one_oxford',
                        'bbc_one_south', 'bbc_one_south_east', 'bbc_one_south_west',
                        'bbc_one_west', 'bbc_one_west_midlands', 'bbc_one_yorks']:
-        device = 'hls_tablet'
+        device = 'tv'
     else:
         device = 'abr_hdtv'
 
