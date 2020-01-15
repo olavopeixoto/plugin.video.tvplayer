@@ -4,7 +4,7 @@
 		<setting id="email" type="text" label="Email" default="" />
 		<setting id="password" type="text" option="hidden" label="Password" default="" enable="!eq(-1,)"/>
 		<setting label="" type="lsep"/>
-		<setting id="use_inputstream" type="bool" label="Use InputStream.Adaptive addon" default="true" visible="System.HasAddon(inputstream.adaptive)"/>
+		<setting id="use_inputstream" type="bool" label="Use InputStream.Adaptive addon" default="false" visible="System.HasAddon(inputstream.adaptive)"/>
 		<setting id="allow_drm" type="bool" label="Allow DRM Content" default="System.HasAddon(inputstream.adaptive)" visible="System.HasAddon(inputstream.adaptive)"/>
 		<setting id="disable_drm_proxy" type="bool" label="Disable DRM Proxy" default="true" enable="eq(-1,true)" visible="false"/>
         <setting label="" type="lsep"/>

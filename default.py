@@ -386,6 +386,9 @@ def get_stream_url(id):
 
     response = json.loads(net.http_GET(url, headers).content)
 
+    print 'STREAM RESPONSE'
+    print response
+
     if 'error' in response['tvplayer']['response']:
         raise Exception(response['tvplayer']['response']['error'])
         return None, None
@@ -478,15 +481,21 @@ def play_stream(name, url, iconimage, description, fanart, genre, title, tvshowt
     liz.setArt(art)
 
     if use_inputstream or (allow_drm and drm_token):
+        print 'USING INPUTSTREAM ADAPTIVE'
+
         parsed_url = urlparse(stream)
         # xbmc.log("PARSED STREAM URL: %s" % parsed_url.path)
         if parsed_url.path.endswith(".m3u8"):
+            print 'HLS - M3U8'
             liz.setProperty('inputstream.adaptive.manifest_type', 'hls')
             liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
+            liz.setMimeType('application/vnd.apple.mpegurl')
             # liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
         elif parsed_url.path.endswith(".mpd"):
+            print 'DASH - MPD'
             liz.setProperty('inputstream.adaptive.manifest_type', 'mpd')
             liz.setProperty('inputstreamaddon', 'inputstream.adaptive')
+            liz.setMimeType('application/dash+xml')
             # liz.setProperty('inputstream.adaptive.stream_headers', 'cookie=' + token)
 
             # xbmc.log("-INPUTSTREAM.ADAPTIVE MPD-")
@@ -494,25 +503,26 @@ def play_stream(name, url, iconimage, description, fanart, genre, title, tvshowt
 
         if drm_token:
 
-            if util.use_drm_proxy():
-                wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
-                wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, stream,
-                                                                      base64.b64encode(drm_token),
-                                                                      drm_token)
-                license_key = wv_proxy_url + '||R{SSM}|'
-            else:
-                wv_proxy_url = 'https://widevine-proxy.drm.technology/proxy'
-                post_data = urllib.quote_plus('{"token":"%s","drm_info":[D{SSM}],"kid":"{KID}"}' % drm_token)
-                license_key = wv_proxy_url + '|Content-Type=application%2Fjson|' + post_data + '|'
+            print 'DRM STREAM - ' + drm_token
+
+            # if util.use_drm_proxy():
+            #     wv_proxy_base = 'http://localhost:' + str(ADDON.getSetting('wv_proxy_port'))
+            #     wv_proxy_url = '{0}?mpd_url={1}&token={2}&{3}'.format(wv_proxy_base, stream,
+            #                                                           base64.b64encode(drm_token),
+            #                                                           drm_token)
+            #     license_key = wv_proxy_url + '||R{SSM}|'
+            # else:
+            wv_proxy_url = 'https://widevine-proxy.drm.technology/proxy'
+            post_data = urllib.quote_plus('{"token":"%s","drm_info":[D{SSM}],"kid":"{KID}"}' % drm_token)
+            license_key = wv_proxy_url + '|Content-Type=application%2Fjson|' + post_data + '|'
 
             # xbmc.log("inputstream.adaptive.license_key: %s" % license_key)
 
             liz.setProperty('inputstream.adaptive.license_type', 'com.widevine.alpha')
             liz.setProperty('inputstream.adaptive.license_key', license_key)
 
-    item_path = stream
-
-    liz.setPath(item_path)
+    print 'STREAM URL - ' + stream
+    liz.setPath(stream)
 
     xbmcplugin.setResolvedUrl(int(sys.argv[1]), True, liz)
 
@@ -538,7 +548,25 @@ def get_params():
 
 def addDir(name, url, mode, iconimage, description, fanart, genre='', sorttitle=None, tvshowtitle=None, clearlogo=None, title=None, studio=None, startdate=None, duration=None, plotoutline=None, channel_name=None):
 
-    u = sys.argv[0] + "?url=" + urllib.quote_plus(url) + "&mode=" + str(mode) + "&name=" + urllib.quote_plus(channel_name or name) + "&iconimage=" + urllib.quote_plus(iconimage) + "&description=" + urllib.quote_plus(description) + "&genre=" + urllib.quote_plus(genre) + "&tvshowtitle=" + urllib.quote_plus(tvshowtitle) + "&fanart=" + urllib.quote_plus(fanart) + "&title=" + urllib.quote_plus(title) + "&studio=" + urllib.quote_plus(studio) + "&clearlogo=" + urllib.quote_plus(clearlogo) + "&plotoutline=" + urllib.quote_plus(plotoutline)
+    print 'ADD-DIR-->'
+    print name
+    print url
+    print mode
+    print iconimage
+    print description
+    print fanart
+    print genre
+    print sorttitle
+    print tvshowtitle
+    print clearlogo
+    print title
+    print studio
+    print startdate
+    print duration
+    print plotoutline
+    print channel_name
+
+    u = sys.argv[0] + "?url=" + urllib.quote_plus(url) + "&mode=" + str(mode) + "&name=" + urllib.quote_plus(channel_name or name) + "&iconimage=" + urllib.quote_plus(iconimage or '') + "&description=" + urllib.quote_plus(description or '') + "&genre=" + urllib.quote_plus(genre or '') + "&tvshowtitle=" + urllib.quote_plus(tvshowtitle or '') + "&fanart=" + urllib.quote_plus(fanart or '') + "&title=" + urllib.quote_plus(title or '') + "&studio=" + urllib.quote_plus(studio or '') + "&clearlogo=" + urllib.quote_plus(clearlogo or '') + "&plotoutline=" + urllib.quote_plus(plotoutline or '')
 
     liz = xbmcgui.ListItem(name, iconImage="DefaultFolder.png", thumbnailImage=iconimage)
 
